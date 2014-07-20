@@ -1,0 +1,214 @@
+// include the basic windows header files and the DirectX header files
+#include <windows.h>
+#include <windowsx.h>
+#include <dinput.h>
+#include <d3d9.h>
+// include the DirectX Library files
+#pragma comment (lib, "dinput8.lib")
+#pragma comment (lib, "dxguid.lib")
+
+// global declarations
+LPDIRECTINPUT8 din;    // the pointer to our DirectInput interface
+LPDIRECTINPUTDEVICE8 dinkeyboard;    // the pointer to the keyboard device
+LPDIRECTINPUTDEVICE8 dinmouse;    // the pointer to the mouse device
+LPDIRECT3D9             g_pD3D       = NULL; // Used to create the D3DDevice
+// function prototypes
+void initDInput(HINSTANCE hInstance, HWND hWnd);    // sets up and initializes DirectInput
+void detect_keys(void);    // gets the current keys being pressed
+void detect_mousepos(void);    // gets the mouse movement and updates the static variables
+void cleanDInput(void);    // closes DirectInput and releases memory
+
+// the WindowProc function prototype
+LRESULT CALLBACK WindowProc(HWND hWnd,
+                         UINT message,
+                         WPARAM wParam,
+                         LPARAM lParam);
+
+// the entry point for any Windows program
+int WINAPI WinMain(HINSTANCE hInstance,
+                   HINSTANCE hPrevInstance,
+                   LPSTR lpCmdLine,
+                   int nCmdShow)
+{
+    // the handle for the window, filled by a function
+    HWND hWnd;
+    // this struct holds information for the window class
+    WNDCLASSEX wc;
+
+    // clear out the window class for use
+    ZeroMemory(&wc, sizeof(WNDCLASSEX));
+
+    // fill in the struct with the needed information
+    wc.cbSize = sizeof(WNDCLASSEX);
+    wc.style = CS_HREDRAW | CS_VREDRAW;
+    wc.lpfnWndProc = (WNDPROC)WindowProc;
+    wc.hInstance = hInstance;
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wc.hbrBackground = (HBRUSH)COLOR_WINDOW;
+    wc.lpszClassName = L"WindowClass1";
+
+    // register the window class
+    RegisterClassEx(&wc);
+
+    // create the window and use the result as the handle
+    hWnd = CreateWindowEx(NULL,
+                          L"WindowClass1",    // name of the window class
+                          L"Our First Windowed Program",    // title of the window
+                          WS_OVERLAPPEDWINDOW,    // window style
+                          300,    // x-position of the window
+                          300,    // y-position of the window
+                          500,    // width of the window
+                          400,    // height of the window
+                          NULL,    // we have no parent window, NULL
+                          NULL,    // we aren't using menus, NULL
+                          hInstance,    // application handle
+                          NULL);    // used with multiple windows, NULL
+
+    // display the window on the screen
+    ShowWindow(hWnd, nCmdShow);
+
+    // set up and initialize DirectInput
+    initDInput(hInstance, hWnd);
+
+    // enter the main loop:
+
+    // this struct holds Windows event messages
+    MSG msg;
+
+    // Enter the infinite message loop
+    while(TRUE)
+    {
+        // find out the starting time of each loop
+        DWORD starting_point = GetTickCount();
+
+        // Check to see if any messages are waiting in the queue
+        if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
+        {
+            // If the message is WM_QUIT, exit the while loop
+            if (msg.message == WM_QUIT)
+                break;
+
+            // translate keystroke messages into the right format
+            TranslateMessage(&msg);
+
+            // send the message to the WindowProc function
+            DispatchMessage(&msg);
+        } 
+
+        detect_mousepos();
+        detect_keys();
+
+        // wait until 1/40th of a second has passed
+        while ((GetTickCount() - starting_point) < 25);
+    }
+
+    // Clean up DirectInput
+    cleanDInput();
+
+    // return this part of the WM_QUIT message to Windows
+    return msg.wParam;
+}
+
+
+// this is the main message handler for the program
+LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    // sort through and find what code to run for the message given
+    switch(message)
+    {
+        // this message is read when the window is closed
+        case WM_DESTROY:
+            {
+                // close the application entirely
+                PostQuitMessage(0);
+                return 0;
+            } break;
+    }
+
+    // Handle any messages the switch statement didn't
+    return DefWindowProc (hWnd, message, wParam, lParam);
+}
+
+
+// this is the function that initializes DirectInput
+void initDInput(HINSTANCE hInstance, HWND hWnd)
+{
+    // create the DirectInput interface
+    DirectInput8Create(hInstance,    // the handle to the application
+                       DIRECTINPUT_VERSION,    // the compatible version
+                       IID_IDirectInput8,    // the DirectInput interface version
+                       (void**)&din,    // the pointer to the interface
+                       NULL);    // COM stuff, so we'll set it to NULL
+
+    // create the keyboard device
+    din->CreateDevice(GUID_SysKeyboard,    // the default keyboard ID being used
+                      &dinkeyboard,    // the pointer to the device interface
+                      NULL);    // COM stuff, so we'll set it to NULL
+
+    // create the mouse device
+    din->CreateDevice(GUID_SysMouse,    // the default mouse ID being used
+                      &dinmouse,    // the pointer to the device interface
+                      NULL);    // COM stuff, so we'll set it to NULL
+
+    dinkeyboard->SetDataFormat(&c_dfDIKeyboard); // set the data format to keyboard format
+    dinmouse->SetDataFormat(&c_dfDIMouse);    // set the data format to mouse format
+
+    // set the control you will have over the keyboard
+    dinkeyboard->SetCooperativeLevel(hWnd,
+                                     DISCL_NONEXCLUSIVE | DISCL_BACKGROUND);
+    // set the control you will have over the mouse
+    dinmouse->SetCooperativeLevel(hWnd,
+                                  DISCL_NONEXCLUSIVE | DISCL_BACKGROUND);
+
+    dinmouse->Acquire();    // Acquire the mouse only once
+
+    return;    // return to WinMain()
+}
+
+
+// this is the function that detects keystrokes and displays them in a message box
+void detect_keys(void)
+{
+    static BYTE keystate[256];    // create a static storage for the key-states
+
+    dinkeyboard->Acquire();    // get access if we don't have it already
+
+    dinkeyboard->GetDeviceState(256, (LPVOID)keystate);    // fill keystate with values
+
+    if(keystate[DIK_A] & 0x80)    // if the 'A' key was pressed...
+
+        // then inform the user of this very important message:
+        MessageBox(NULL, L"You pressed the 'A' key!", L"IMPORTANT MESSAGE!", MB_OK);
+
+    return;
+}
+
+
+// this is the function that detets mouse movements and mouse buttons
+void detect_mousepos(void)
+{
+    static DIMOUSESTATE mousestate;    // create a static storage for the mouse-states
+
+    dinmouse->Acquire();    // get access if we don't have it already
+
+    // fill the mousestate with values
+    dinmouse->GetDeviceState(sizeof(DIMOUSESTATE), (LPVOID)&mousestate);
+
+    if(mousestate.rgbButtons[0] & 0x80)    // if the left mouse-button was clicked...
+
+        // then inform the user of this very important message:
+        MessageBox(NULL, L"You clicked the mouse button", L"IMPORTANT MESSAGE!", MB_OK);
+
+    return;
+}
+
+
+// this is the function that closes DirectInput
+void cleanDInput(void)
+{
+    dinkeyboard->Unacquire();    // make sure the keyboard is unacquired
+    dinmouse->Unacquire();    // make sure the mouse is unacquired
+    din->Release();    // close DirectInput before exiting
+
+    return;
+}
